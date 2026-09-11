@@ -28,6 +28,9 @@
     },
     "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsdown",
     "lint": "oxlint --type-aware --report-unused-disable-directives --fix && oxfmt"
