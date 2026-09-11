@@ -1,21 +1,26 @@
-export interface IWorkerPool {
-  lazySpawnThreads?: boolean;
-  workerScript: string | URL;
+export interface IThreadOptions {
   maxConcurrency?: number;
-  totalThreads?: number;
-  taskTimeoutThreshold?: number;
+  workerScript: string | URL;
   threadIdleTimeout?: number;
+  taskTimeoutThreshold?: number;
 }
 
-export interface IThread {
+export interface IThreadPool extends IThreadOptions {
+  lazySpawnThreads?: boolean;
+  totalThreads?: number;
+}
+
+export interface IThread extends IThreadOptions {
   workerScript: string | URL;
   onDestroy?: () => void;
-  threadIdleTimeout: number;
-  taskTimeoutThreshold?: number;
 }
 
 export type WorkerArgs<T extends Record<string, any>> = T & {
   __WORKER_POOL_ID__: string;
 };
 
-export type WorkerError = WorkerArgs<{ reason: string }>;
+export enum TaskStatus {
+  FAILED = "failed",
+  PENDING = "pending",
+  SUCCEEDED = "succeeded",
+}

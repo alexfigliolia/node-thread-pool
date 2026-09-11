@@ -1,3 +1,5 @@
 export * from "./Thread";
-export * from "./WorkerPool";
+export * from "./ThreadPool";
 export * from "./types";
+export * from "./WorkerResolver";
+export * from "./ThreadPoolWorker";
