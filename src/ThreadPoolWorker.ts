@@ -4,6 +4,13 @@ import type { IWorkerResult } from "./WorkerResolver";
 import { WorkerResolver } from "./WorkerResolver";
 import { type WorkerArgs } from "./types";
 
+/**
+ * Thread Pool Worker
+ *
+ * A wrapper around worker-thread message transport. Pass
+ * your multi-threaded logic as a callback to the constructor
+ * and it'll take care of the rest.
+ */
 export class ThreadPoolWorker<Args extends Record<string, any>, Result> {
   constructor(operation: (args: Args) => Result | Promise<Result>) {
     parentPort?.on("message", (data: WorkerArgs<Args>) => {
