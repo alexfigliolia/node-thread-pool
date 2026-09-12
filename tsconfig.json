@@ -2,7 +2,7 @@
   "compilerOptions": {
     "module": "nodenext",
     "target": "esnext",
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "types": ["node"],
     "moduleResolution": "nodenext",
     "noUncheckedIndexedAccess": true,

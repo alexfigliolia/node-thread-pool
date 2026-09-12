@@ -1,8 +1,5 @@
-import { parentPort } from "node:worker_threads";
-
 import type { IWorkerResult } from "./WorkerResolver";
 import { WorkerResolver } from "./WorkerResolver";
-import { type WorkerArgs } from "./types";
 
 /**
  * Thread Pool Worker
@@ -11,12 +8,17 @@ import { type WorkerArgs } from "./types";
  * your multi-threaded logic as a callback to the constructor
  * and it'll take care of the rest.
  */
-export class ThreadPoolWorker<Args extends Record<string, any>, Result> {
+export abstract class AbstractThreadPoolWorker<
+  Args extends Record<string, any>,
+  Event extends Record<string, any>,
+  Result,
+> {
   constructor(operation: (args: Args) => Result | Promise<Result>) {
-    parentPort?.on("message", (data: WorkerArgs<Args>) => {
-      const resolver = new WorkerResolver<Result>(data.__WORKER_POOL_ID__);
+    this.listenToPort((data: Event) => {
+      const args = this.deriveArgs(data);
+      const resolver = new WorkerResolver<Result>(this.getTaskID(args));
       try {
-        const result = operation(data);
+        const result = operation(args);
         if (result instanceof Promise) {
           void result
             .then(v => this.respond(resolver.resolve(v)))
@@ -30,7 +32,11 @@ export class ThreadPoolWorker<Args extends Record<string, any>, Result> {
     });
   }
 
-  private respond(result: IWorkerResult<Result, unknown>) {
-    parentPort?.postMessage(result);
-  }
+  protected abstract listenToPort(callback: (event: Event) => void): void;
+
+  protected abstract getTaskID(args: Args): string;
+
+  protected abstract deriveArgs(args: Event): Args;
+
+  protected abstract respond(result: IWorkerResult<Result, unknown>): void;
 }

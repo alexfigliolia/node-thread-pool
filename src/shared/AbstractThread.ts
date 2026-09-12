@@ -1,9 +1,7 @@
-import type { WorkerOptions } from "node:worker_threads";
-import { Worker } from "node:worker_threads";
-
-import type { IThread } from "./types";
-import { Task } from "./Task";
+import type { IThread, WorkerArgs } from "./types";
 import { Defaults } from "./Defaults";
+import type { AbstractWorker } from "./AbstractWorker";
+import type { AbstractTask } from "./AbstractTask";
 
 /**
  * Thread
@@ -11,24 +9,32 @@ import { Defaults } from "./Defaults";
  * A wrapper around the `node:worker_threads.Worker` supporting type-safe
  * operations, concurrency limits, and automatic shut down
  */
-export class Thread<Args extends Record<string, any>, Result> {
+export abstract class AbstractThread<
+  Args extends Record<string, any>,
+  Result,
+  WorkerType extends AbstractWorker<any>,
+  IncomingMessage extends Record<string, any>,
+  Task extends AbstractTask<Args, Result, WorkerType, IncomingMessage>,
+> {
   public isDead = false;
-  public Worker: Worker;
+  public Worker: WorkerType;
   private killPromise?: Promise<void>;
   private idleKillListener?: Promise<void>;
+  public static readonly Defaults = Defaults;
   public readonly configuration: Required<IThread>;
   private readonly idleCallbacks: (() => void)[] = [];
+  private readonly pendingTasks = new Map<string, Task>();
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private readonly pendingTasks = new Map<string, Task<Args, Result>>();
   constructor(
     config: IThread,
     public readonly workerOptions?: WorkerOptions,
   ) {
-    config.maxConcurrency ??= Defaults.maxConcurrency;
-    config.threadIdleTimeout ??= Defaults.threadIdleTimeout;
-    config.taskTimeoutThreshold ??= Defaults.taskTimeoutThreshold;
+    config.maxConcurrency ??= AbstractThread.Defaults.maxConcurrency;
+    config.threadIdleTimeout ??= AbstractThread.Defaults.threadIdleTimeout;
+    config.taskTimeoutThreshold ??=
+      AbstractThread.Defaults.taskTimeoutThreshold;
     this.configuration = config as Required<IThread>;
-    this.Worker = new Worker(config.workerScript, this.workerOptions);
+    this.Worker = this.spawnWorker();
   }
 
   /**
@@ -48,7 +54,7 @@ export class Thread<Args extends Record<string, any>, Result> {
     if (this.totalOutstandingTasks >= this.configuration.maxConcurrency) {
       await this.waitOnMaxConcurrency();
     }
-    const task = new Task<Args, Result>(args, timeoutThreshold);
+    const task = this.createTask(args, timeoutThreshold);
     const work = task.run(this);
     this.pendingTasks.set(task.ID, task);
     return work.finally(() => {
@@ -75,7 +81,7 @@ export class Thread<Args extends Record<string, any>, Result> {
       return this.killPromise;
     }
     this.clearIdleTimer();
-    this.killPromise = this.Worker.terminate().then(() => {
+    this.killPromise = this.terminateWorker().then(() => {
       this.configuration?.onDestroy?.();
       for (const [_, task] of this.pendingTasks) {
         task.reject("Thread killed manually");
@@ -138,6 +144,23 @@ export class Thread<Args extends Record<string, any>, Result> {
     return this.pendingTasks;
   }
 
+  public abstract internallyPostMessage(args: WorkerArgs<Args>): void;
+
+  public abstract internallySubscribe(
+    onMessage: (message: IncomingMessage) => void,
+    onError: (error: Error | ErrorEvent) => void,
+  ): () => void;
+
+  protected abstract terminateWorker(): Promise<void>;
+
+  protected abstract spawnWorker(): WorkerType;
+
+  protected abstract createTask(
+    ...args: ConstructorParameters<
+      typeof AbstractTask<Args, Result, WorkerType, IncomingMessage>
+    >
+  ): Task;
+
   private deferKill() {
     this.clearIdleTimer();
     this.timer = setTimeout(() => {
@@ -178,9 +201,6 @@ export class Thread<Args extends Record<string, any>, Result> {
     this.isDead = false;
     this.killPromise = undefined;
     this.idleKillListener = undefined;
-    this.Worker = new Worker(
-      this.configuration.workerScript,
-      this.workerOptions,
-    );
+    this.Worker = this.spawnWorker();
   }
 }

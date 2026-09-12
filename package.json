@@ -22,9 +22,13 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.cts",
   "exports": {
-    ".": {
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+    "./node": {
+      "import": "./dist/node/index.mjs",
+      "require": "./dist/node/index.cjs"
+    },
+    "./web": {
+      "import": "./dist/web/index.mjs",
+      "require": "./dist/web/index.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -44,6 +48,7 @@
     "oxlint": "^1.82.0",
     "oxlint-tsgolint": "^7.0.2001",
     "tsdown": "^0.23.0",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "unrun": "^0.3.1"
   },

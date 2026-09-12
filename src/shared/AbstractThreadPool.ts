@@ -1,9 +1,10 @@
 import type { WorkerOptions } from "node:worker_threads";
 
 import type { IThreadPool } from "./types";
-import { Thread } from "./Thread";
-import type { Task } from "./Task";
 import { Defaults } from "./Defaults";
+import type { AbstractWorker } from "./AbstractWorker";
+import type { AbstractThread } from "./AbstractThread";
+import type { AbstractTask } from "./AbstractTask";
 
 /**
  * Thread Pool
@@ -14,19 +15,34 @@ import { Defaults } from "./Defaults";
  * supports max-concurrency per thread, and allows for type-safe
  * multi-threaded operations.
  */
-export class ThreadPool<Args extends Record<string, any>, Result> {
+export abstract class AbstractThreadPool<
+  Args extends Record<string, any>,
+  Result,
+  WorkerType extends AbstractWorker<any>,
+  IncomingMessage extends Record<string, any>,
+  Task extends AbstractTask<Args, Result, WorkerType, IncomingMessage>,
+  Thread extends AbstractThread<
+    Args,
+    Result,
+    WorkerType,
+    IncomingMessage,
+    Task
+  >,
+> {
+  public static readonly Defaults = Defaults;
+  private readonly POOL: (Thread | undefined)[];
   public readonly taskTimeoutThreshold?: number;
   public readonly configuration: Required<IThreadPool>;
-  private readonly POOL: (Thread<Args, Result> | undefined)[];
   constructor(
     config: IThreadPool,
     public readonly workerOptions?: WorkerOptions,
   ) {
-    config.totalThreads ??= Defaults.totalThreads;
-    config.maxConcurrency ??= Defaults.maxConcurrency;
-    config.lazySpawnThreads ??= Defaults.lazySpawnThreads;
-    config.threadIdleTimeout ??= Defaults.threadIdleTimeout;
-    config.taskTimeoutThreshold ??= Defaults.taskTimeoutThreshold;
+    config.totalThreads ??= AbstractThreadPool.Defaults.totalThreads;
+    config.maxConcurrency ??= AbstractThreadPool.Defaults.maxConcurrency;
+    config.lazySpawnThreads ??= AbstractThreadPool.Defaults.lazySpawnThreads;
+    config.threadIdleTimeout ??= AbstractThreadPool.Defaults.threadIdleTimeout;
+    config.taskTimeoutThreshold ??=
+      AbstractThreadPool.Defaults.taskTimeoutThreshold;
     this.configuration = config as Required<IThreadPool>;
     this.POOL = Array.from({ length: config.totalThreads }, (_, i) => {
       if (this.configuration.lazySpawnThreads) {
@@ -93,7 +109,7 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
    * Returns a list of all currently running tasks in the pool
    */
   public get pendingTasks() {
-    const tasks: Task<Args, Result>[] = [];
+    const tasks: Task[] = [];
     for (const thread of this.POOL) {
       tasks.push(...Array.from(thread?.outstandingTasks?.values?.() ?? []));
     }
@@ -164,7 +180,7 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
   private createThread(position: number) {
     const { workerScript, threadIdleTimeout, taskTimeoutThreshold } =
       this.configuration;
-    return new Thread<Args, Result>(
+    return this.spawn(
       {
         workerScript,
         threadIdleTimeout,
@@ -182,4 +198,10 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
       this.POOL[i] = undefined;
     }
   }
+
+  protected abstract spawn(
+    ...args: ConstructorParameters<
+      typeof AbstractThread<Args, Result, WorkerType, IncomingMessage, Task>
+    >
+  ): Thread;
 }

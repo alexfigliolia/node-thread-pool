@@ -1,6 +1,15 @@
 # Thread Pool
 
-A work stealing thread pool using node.js worker threads - motivated by the design of `tokio::runtime::Builder`.
+A work stealing thread pool for node.js and the browser motivated by the design of `tokio::runtime::Builder`.
+
+In the browser, each thread is an instance of a [Web Worker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers) while the server uses the [`node:worker_threads`](https://nodejs.org/api/worker_threads.html) module.
+
+This library provides an identical API for each platform - available at `@figliolia/thread-pool/web` nad `@figliolia/thread-pool/node`
+
+1. [Installation](#installation)
+2. [Workers](#setting-up-your-worker)
+3. [Simple Theading](#simple-off-the-main-thread-work)
+4. [Thread Pooling](#thread-pooling)
 
 ## Installation
 
@@ -10,62 +19,64 @@ npm i -D @figliolia/thread-pool
 
 ## Setting Up Your Worker
 
-Worker scripts are typically what trip up new-comers to node's multi-threading model.
+The Worker's script is typically what trips up new-comers to JavaScript's multi-threading model. With this in mind, we designed an interface to simplify worker creation.
 
-Using this library, a type-safe worker script is as simple as wrapping your logic in a `ThreadPoolWorker` instance:
+Simply create your worker's file and wrap your desired logic in
+a `ThreadPoolWorker` instance;
 
 ```typescript
 // worker.ts
-import { ThreadPoolWorker } from "@figliolia/thread-pool";
+import { ThreadPoolWorker } from "@figliolia/thread-pool/node";
+// or
+import { ThreadPoolWorker } from "@figliolia/thread-pool/web";
 
-new ThreadPoolWorker((event: YourTaskArgs) => {
+new ThreadPoolWorker((args: YourTaskArgs) => {
   // your multi-threaded work
+  // return whatever value you like back to the main thread
 });
 
 // that's it.
 ```
 
-Your callback will be invoked every time your enqueue a task using a `Thread` or `ThreadPool` instance. Your callback's return value will be the resolved value of the task's promise.
+Your `ThreadPoolWorker` will be invoked every time a task is enqueued from a `Thread` or `ThreadPool` instance. Your callback's return value will be the resolved value of the task's promise.
 
 ```typescript
-const result = await new Thread(options).enqueueTask(myArgs);
+// main thread
+import { TheadPool, Thread } from "@figliolia/thread-pool/web|node";
+
+const yourReturnValue = await new Thread(options).enqueueTask(myArgs);
 // or
-const result = await new ThreadPool(ThreadPool).enqueueTask(myArgs);
+const yourReturnValue = await new ThreadPool(options).enqueueTask(myArgs);
 ```
 
-A working example of a `ThreadPoolWorker` managed script might look like the following:
+A working example of a `ThreadPoolWorker` script might look like the following:
 
 ```typescript
 // worker.ts
 import { readdir } from "node:fs/promises";
-import { ThreadPoolWorker } from "@figliolia/thread-pool";
+import { ThreadPoolWorker } from "@figliolia/thread-pool/node";
 
-new ThreadPoolWorker((event: QueuedTaskArgs) => {
+new ThreadPoolWorker((event: { filePath: string; search: string }) => {
   // scan the file system recursively
-  const list = readdir(args.filePath, {
+  const list = readdir(event.filePath, {
     recursive: true,
     withFileTypes: true,
   });
   const results: string[] = [];
   for (const entry of list) {
     // search for files that include the search string
-    if (entry.isFile() && entry.name.includes(search)) {
+    if (entry.isFile() && entry.name.includes(event.search)) {
       results.push(entry.parentPath);
     }
   }
   // resolve with all matching file paths
   return results;
 });
-
-interface QueuedTaskArgs {
-  filePath: string;
-  search: string;
-}
 ```
 
 ## Simple "Off-The-Main-Thread" Work
 
-To spawn a thread for `off-the-main-thread` work, use the `Thread` object
+To spawn a thread for more predictable `off-the-main-thread` work, use the `Thread` object
 
 ```typescript
 import { Thread } from "@figliolia/thread-pool";
@@ -91,17 +102,20 @@ const myThread = new Thread<ArgsType, ResultType>(
 const result = await myThread.enqueueTask(args);
 // args will be posted to your worker script
 
-// to kill your thread once all enqueued tasks complete
-await myThread.killBackground();
-
-// to kill your thread without waiting on pending tasks
-await myThread.kill();
-
 // whether the thread has no pending tasks running
 myThread.isIdle;
 
-// the number of tasks the thread is currently running
+// a map of all currently running tasks keyed by their task IDs
 myThread.outstandingTasks;
+
+// the number of currently running tasks on the thread
+myThread.totalOutstandingTasks;
+
+// to kill your thread once it reaches an idle state
+await myThread.killBackground();
+
+// to kill your thread without waiting on pending tasks to complete
+await myThread.kill();
 ```
 
 ## Thread Pooling
@@ -132,24 +146,24 @@ const myPool = new ThreadPool({
 const result = await myPool.enqueueTask(args);
 // args will be posted to your worker script
 
-// to kill your thread pool once all enqueued tasks complete
-await myPool.shutDownBackground();
-
-// to kill your thread pool without waiting on pending tasks
-await myPool.shutDown();
-
-// every task currently running in the pool
+// A list of tasks currently running in the pool
 myPool.pendingTasks;
 
 // the total number of pending tasks in the pool
 myPool.totalPendingTasks;
 
-// whether or not the pool is currently not waiting on any tasks to complete
+// returns true if all threads in the pool are idle
 myPool.isIdle;
 
-// whether or not the pool currently has a thread not waiting on a task to complete
+// returns true if at least one thread in the pool is idle
 myPool.hasIdleThread;
 
 // the current thread pool
 myPool.threads;
+
+// to kill all threads in the pool once they reach idle
+await myPool.shutDownBackground();
+
+// to kill all threads in the pool without waiting for them to reach idle
+await myPool.shutDown();
 ```

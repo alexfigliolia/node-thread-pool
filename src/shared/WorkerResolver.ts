@@ -35,6 +35,14 @@ export class WorkerResolver<T, E = unknown> {
   }
 }
 
+export type IWorkerResolvedResult<T> = ReturnType<
+  WorkerResolver<T, unknown>["resolve"]
+>;
+
+export type IWorkerResolvedError<E> = ReturnType<
+  WorkerResolver<any, E>["error"]
+>;
+
 export type IWorkerResult<T, E> =
-  | ReturnType<WorkerResolver<T, E>["resolve"]>
-  | ReturnType<WorkerResolver<T, E>["error"]>;
+  | IWorkerResolvedResult<T>
+  | IWorkerResolvedError<E>;
