@@ -2,8 +2,8 @@
   "compilerOptions": {
     "module": "nodenext",
     "target": "esnext",
-    "lib": ["ESNext"],
-    "types": ["node"],
+    "lib": ["ESNext", "DOM"],
+    "types": ["node", "vitest/globals"],
     "moduleResolution": "nodenext",
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": false,

@@ -24,7 +24,7 @@ export interface IThreadOptions {
   /**
    * taskTimeoutThreshold
    *
-   * A timeout for tasks spawned on a thread. Using this threshold, your enqueued task's promise will reject if not complete
+   * A timeout for tasks spawned on a thread. Using this threshold, an enqueued task's promise will reject if not complete
    * within the duration of the threshold
    *
    * Defaults to `Infinity`

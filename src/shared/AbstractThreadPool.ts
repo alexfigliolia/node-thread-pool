@@ -1,9 +1,8 @@
-import type { WorkerOptions } from "node:worker_threads";
-
 import type { IThreadPool } from "./types";
-import { Thread } from "./Thread";
-import type { Task } from "./Task";
 import { Defaults } from "./Defaults";
+import type { AbstractWorker } from "./AbstractWorker";
+import type { AbstractThread } from "./AbstractThread";
+import type { AbstractTask } from "./AbstractTask";
 
 /**
  * Thread Pool
@@ -14,26 +13,45 @@ import { Defaults } from "./Defaults";
  * supports max-concurrency per thread, and allows for type-safe
  * multi-threaded operations.
  */
-export class ThreadPool<Args extends Record<string, any>, Result> {
+export abstract class AbstractThreadPool<
+  Args extends Record<string, any>,
+  Result,
+  WorkerOptions extends Record<string, any>,
+  WorkerType extends AbstractWorker<WorkerOptions>,
+  IncomingMessage extends Record<string, any>,
+  Task extends AbstractTask<Args, Result, WorkerType, IncomingMessage>,
+  Thread extends AbstractThread<
+    Args,
+    Result,
+    WorkerType,
+    IncomingMessage,
+    Task
+  >,
+> {
+  public static readonly Defaults = Defaults;
+  private readonly POOL: (Thread | null)[];
   public readonly taskTimeoutThreshold?: number;
   public readonly configuration: Required<IThreadPool>;
-  private readonly POOL: (Thread<Args, Result> | undefined)[];
   constructor(
     config: IThreadPool,
     public readonly workerOptions?: WorkerOptions,
   ) {
-    config.totalThreads ??= Defaults.totalThreads;
-    config.maxConcurrency ??= Defaults.maxConcurrency;
-    config.lazySpawnThreads ??= Defaults.lazySpawnThreads;
-    config.threadIdleTimeout ??= Defaults.threadIdleTimeout;
-    config.taskTimeoutThreshold ??= Defaults.taskTimeoutThreshold;
+    const defaults = (this.constructor as typeof AbstractThreadPool).Defaults;
+    config.totalThreads ??= defaults.totalThreads;
+    config.maxConcurrency ??= defaults.maxConcurrency;
+    config.lazySpawnThreads ??= defaults.lazySpawnThreads;
+    config.threadIdleTimeout ??= defaults.threadIdleTimeout;
+    config.taskTimeoutThreshold ??= defaults.taskTimeoutThreshold;
     this.configuration = config as Required<IThreadPool>;
-    this.POOL = Array.from({ length: config.totalThreads }, (_, i) => {
-      if (this.configuration.lazySpawnThreads) {
-        return;
-      }
-      return this.createThread(i);
-    });
+    this.POOL = Array.from(
+      { length: this.configuration.totalThreads },
+      (_, i) => {
+        if (this.configuration.lazySpawnThreads) {
+          return null;
+        }
+        return this.createThread(i);
+      },
+    );
   }
 
   /**
@@ -64,7 +82,7 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
    */
   public async shutDown() {
     await Promise.all(
-      this.POOL.map(thread => Promise.resolve(thread?.kill?.())),
+      this.POOL.map(thread => Promise.resolve(thread?.shutDown?.())),
     );
     this.releaseThreads();
   }
@@ -82,7 +100,7 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
    */
   public async shutDownBackground() {
     await Promise.all(
-      this.POOL.map(thread => Promise.resolve(thread?.killBackground?.())),
+      this.POOL.map(thread => Promise.resolve(thread?.shutDown?.())),
     );
     this.releaseThreads();
   }
@@ -93,7 +111,7 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
    * Returns a list of all currently running tasks in the pool
    */
   public get pendingTasks() {
-    const tasks: Task<Args, Result>[] = [];
+    const tasks: Task[] = [];
     for (const thread of this.POOL) {
       tasks.push(...Array.from(thread?.outstandingTasks?.values?.() ?? []));
     }
@@ -135,11 +153,21 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
   /**
    * Threads
    *
-   * Returns the current thread pool. Undefined array indices represent
+   * Returns a list of the current threads in the pool. If all threads
+   * have idled and shut down, an empty array is returned
+   */
+  public get threads() {
+    return this.POOL.filter(v => v !== null);
+  }
+
+  /**
+   * Pool
+   *
+   * Returns the current thread pool. Null array indices represent
    * threads that not yet been allocated or have shutdown due to their
    * idle state exceeding the `threadIdleTimeout`
    */
-  public get threads() {
+  public get pool() {
     return this.POOL;
   }
 
@@ -162,15 +190,20 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
   }
 
   private createThread(position: number) {
-    const { workerScript, threadIdleTimeout, taskTimeoutThreshold } =
-      this.configuration;
-    return new Thread<Args, Result>(
+    const {
+      workerScript,
+      maxConcurrency,
+      threadIdleTimeout,
+      taskTimeoutThreshold,
+    } = this.configuration;
+    return this.spawn(
       {
         workerScript,
+        maxConcurrency,
         threadIdleTimeout,
         taskTimeoutThreshold,
         onDestroy: () => {
-          this.POOL[position] = undefined;
+          this.POOL[position] = null;
         },
       },
       this.workerOptions,
@@ -179,7 +212,13 @@ export class ThreadPool<Args extends Record<string, any>, Result> {
 
   private releaseThreads() {
     for (let i = 0; i < this.configuration.totalThreads; i++) {
-      this.POOL[i] = undefined;
+      this.POOL[i] = null;
     }
   }
+
+  protected abstract spawn(
+    ...args: ConstructorParameters<
+      typeof AbstractThread<Args, Result, WorkerType, IncomingMessage, Task>
+    >
+  ): Thread;
 }
