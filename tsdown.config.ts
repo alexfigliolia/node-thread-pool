@@ -6,6 +6,9 @@ export default defineConfig({
   shims: true,
   clean: false,
   unbundle: true,
-  exports: true,
+  exports: {
+    enabled: true,
+    legacy: true,
+  },
   format: ["cjs", "esm"],
 });
