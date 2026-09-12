@@ -1,7 +1,9 @@
 import { parentPort } from "node:worker_threads";
 
-import type { IWorkerResult, WorkerArgs } from "../shared";
+import type { WorkerArgs } from "../shared";
 import { AbstractThreadPoolWorker } from "../shared";
+
+import { WorkerResolver } from "./WorkerResolver";
 
 /**
  * Thread Pool Worker
@@ -13,7 +15,12 @@ import { AbstractThreadPoolWorker } from "../shared";
 export class ThreadPoolWorker<
   Args extends Record<string, any>,
   Result,
-> extends AbstractThreadPoolWorker<WorkerArgs<Args>, WorkerArgs<Args>, Result> {
+> extends AbstractThreadPoolWorker<
+  WorkerArgs<Args>,
+  WorkerArgs<Args>,
+  Result,
+  WorkerResolver<Result>
+> {
   protected override listenToPort(callback: (event: WorkerArgs<Args>) => void) {
     return parentPort?.on("message", callback);
   }
@@ -26,7 +33,7 @@ export class ThreadPoolWorker<
     return args;
   }
 
-  protected override respond(result: IWorkerResult<Result, unknown>) {
-    parentPort?.postMessage(result);
+  protected createResolver(ID: string) {
+    return new WorkerResolver<Result>(ID);
   }
 }

@@ -3,7 +3,6 @@ import { AbstractThread } from "../shared";
 
 import type { WebWorkerResult } from "./types";
 import { Task } from "./Task";
-import { Defaults } from "./Defaults";
 
 /**
  * Thread
@@ -21,8 +20,6 @@ export class Thread<
   WebWorkerResult<Result>,
   Task<Args, Result>
 > {
-  public static override readonly Defaults = Defaults;
-
   public override internallyPostMessage(args: WorkerArgs<Args>) {
     this.Worker.postMessage(args);
   }

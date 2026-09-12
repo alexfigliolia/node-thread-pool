@@ -1,6 +1,7 @@
 import type { Worker } from "node:worker_threads";
 
 import type {
+  AbstractThread,
   IWorkerResolvedError,
   IWorkerResolvedResult,
   IWorkerResult,
@@ -31,5 +32,19 @@ export class Task<
 
   protected override matchTask(message: IWorkerResult<Result, unknown>) {
     return message.__WORKER_POOL_ID__ === this.ID;
+  }
+
+  protected override onThrownError(
+    error: Error | ErrorEvent,
+    thread: AbstractThread<
+      Args,
+      Result,
+      Worker,
+      IWorkerResult<Result, unknown>,
+      this
+    >,
+  ) {
+    super.onThrownError(error, thread);
+    thread.isDead = true;
   }
 }

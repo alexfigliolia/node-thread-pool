@@ -20,6 +20,7 @@ export class ThreadPool<
 > extends AbstractThreadPool<
   Args,
   Result,
+  WorkerOptions,
   Worker,
   WebWorkerResult<Result>,
   Task<Args, Result>,

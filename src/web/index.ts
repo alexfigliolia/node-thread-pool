@@ -5,3 +5,4 @@ export * from "./ThreadPool";
 export * from "./types";
 export * from "../shared/types";
 export * from "./ThreadPoolWorker";
+export * from "./WorkerResolver";

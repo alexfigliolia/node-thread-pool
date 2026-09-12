@@ -1,6 +1,6 @@
 # Thread Pool
 
-A work stealing thread pool for node.js and the browser motivated by the design of `tokio::runtime::Builder`.
+A work stealing thread pool for the browser and node.js motivated by the design of `tokio::runtime::Builder`.
 
 In the browser, each thread is an instance of a [Web Worker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers) while the server uses the [`node:worker_threads`](https://nodejs.org/api/worker_threads.html) module.
 
@@ -30,15 +30,17 @@ import { ThreadPoolWorker } from "@figliolia/thread-pool/node";
 // or
 import { ThreadPoolWorker } from "@figliolia/thread-pool/web";
 
-new ThreadPoolWorker((args: YourTaskArgs) => {
+new ThreadPoolWorker((args: YourTaskArgs, resolve, reject) => {
   // your multi-threaded work
-  // return whatever value you like back to the main thread
+
+  // resolve or reject with whatever value you'd liek to pass back
+  // to the main thread
 });
 
 // that's it.
 ```
 
-Your `ThreadPoolWorker` will be invoked every time a task is enqueued from a `Thread` or `ThreadPool` instance. Your callback's return value will be the resolved value of the task's promise.
+Your `ThreadPoolWorker` will be invoked every time a task is enqueued from a `Thread` or `ThreadPool` instance.
 
 ```typescript
 // main thread
@@ -56,7 +58,10 @@ A working example of a `ThreadPoolWorker` script might look like the following:
 import { readdir } from "node:fs/promises";
 import { ThreadPoolWorker } from "@figliolia/thread-pool/node";
 
-new ThreadPoolWorker((event: { filePath: string; search: string }) => {
+new ThreadPoolWorker((
+  event: { filePath: string; search: string },
+  resolve,
+) => {
   // scan the file system recursively
   const list = readdir(event.filePath, {
     recursive: true,
@@ -70,7 +75,7 @@ new ThreadPoolWorker((event: { filePath: string; search: string }) => {
     }
   }
   // resolve with all matching file paths
-  return results;
+  return resolve(results);
 });
 ```
 
@@ -79,12 +84,14 @@ new ThreadPoolWorker((event: { filePath: string; search: string }) => {
 To spawn a thread for more predictable `off-the-main-thread` work, use the `Thread` object
 
 ```typescript
-import { Thread } from "@figliolia/thread-pool";
+import { Thread } from "@figliolia/thread-pool/node";
+// or 
+import { Thread } from "@figliolia/thread-pool/web";
 
 const myThread = new Thread<ArgsType, ResultType>(
   {
     // a script to run on the thread
-    workerScript: "./your-thread-pool-worker-script.js",
+    workerScript: new URL("./your-worker-script.ts", import.meta.url),
     // (optional) if a thread is idle for this duration it will shut down.
     // It can be brought back up simply by enqueing another task
     threadIdleTimeout: 2000,
@@ -95,7 +102,7 @@ const myThread = new Thread<ArgsType, ResultType>(
     // (optional) a callback to run when the thread is destroyed
     onDestroy: () => {},
   },
-  {/* Node.JS.WorkerOptions */},
+  {/* WorkerOptions */},
 );
 
 // Run a task on your thread
@@ -111,25 +118,27 @@ myThread.outstandingTasks;
 // the number of currently running tasks on the thread
 myThread.totalOutstandingTasks;
 
-// to kill your thread once it reaches an idle state
-await myThread.killBackground();
+// to shut down your thread once it reaches an idle state
+await myThread.shutDownBackground();
 
-// to kill your thread without waiting on pending tasks to complete
-await myThread.kill();
+// to shut down your thread without waiting on pending tasks to complete
+await myThread.shutDown();
 ```
 
 ## Thread Pooling
 
-When optimizing the distribution of a large number of concurrent tasks, opt for the `TheadPool`. The `ThreadPool` will handle optimizing the distribution of your tasks amongst a series of idle threads.
+When optimizing the distribution of a large number of concurrent tasks, opt for the `TheadPool`. The `ThreadPool` will load-balance your tasks load between a pool of `Threads`:
 
 ```typescript
-import { ThreadPool } from "@figliolia/thread-pool";
+import { ThreadPool } from "@figliolia/thread-pool/web";
+// or
+import { ThreadPool } from "@figliolia/thread-pool/node";
 
 const myPool = new ThreadPool({
   // a script to run on the thread
-  workerScript: "./your-thread-pool-worker-script.js",
+  workerScript: new URL("./your-worker-script.ts", import.meta.url),
   // (optional) if a thread is idle for this duration it will shut down.
-  // It can be brought back up simply by enqueing another task
+  // It can be brought back up simply by queueing a task to it
   threadIdleTimeout: 2000,
   // (optional) a threadhold of milliseconds used to abandon a pending task
   taskTimeoutThreshold: Infinity,
@@ -159,6 +168,9 @@ myPool.isIdle;
 myPool.hasIdleThread;
 
 // the current thread pool
+myPool.pool;
+
+// A list of the currently operating threads in the pool
 myPool.threads;
 
 // to kill all threads in the pool once they reach idle

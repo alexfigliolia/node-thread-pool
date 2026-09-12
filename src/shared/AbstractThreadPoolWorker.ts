@@ -1,5 +1,4 @@
-import type { IWorkerResult } from "./WorkerResolver";
-import { WorkerResolver } from "./WorkerResolver";
+import type { AbstractWorkerResolver } from "./AbstractWorkerResolver";
 
 /**
  * Thread Pool Worker
@@ -12,23 +11,19 @@ export abstract class AbstractThreadPoolWorker<
   Args extends Record<string, any>,
   Event extends Record<string, any>,
   Result,
+  Resolver extends AbstractWorkerResolver<Result, any>,
 > {
-  constructor(operation: (args: Args) => Result | Promise<Result>) {
+  constructor(
+    operation: (
+      args: Args,
+      resolve: Resolver["resolve"],
+      reject: Resolver["reject"],
+    ) => void | Promise<void>,
+  ) {
     this.listenToPort((data: Event) => {
       const args = this.deriveArgs(data);
-      const resolver = new WorkerResolver<Result>(this.getTaskID(args));
-      try {
-        const result = operation(args);
-        if (result instanceof Promise) {
-          void result
-            .then(v => this.respond(resolver.resolve(v)))
-            .catch(error => this.respond(resolver.error(error)));
-        } else {
-          this.respond(resolver.resolve(result));
-        }
-      } catch (error: unknown) {
-        this.respond(resolver.error(error));
-      }
+      const resolver = this.createResolver(this.getTaskID(args));
+      void operation(args, resolver.resolve, resolver.reject);
     });
   }
 
@@ -38,5 +33,5 @@ export abstract class AbstractThreadPoolWorker<
 
   protected abstract deriveArgs(args: Event): Args;
 
-  protected abstract respond(result: IWorkerResult<Result, unknown>): void;
+  protected abstract createResolver(ID: string): Resolver;
 }

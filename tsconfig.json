@@ -3,7 +3,7 @@
     "module": "nodenext",
     "target": "esnext",
     "lib": ["ESNext", "DOM"],
-    "types": ["node"],
+    "types": ["node", "vitest/globals"],
     "moduleResolution": "nodenext",
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": false,

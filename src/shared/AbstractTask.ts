@@ -1,7 +1,7 @@
 import { AutoIncrementingID } from "@figliolia/event-emitter";
 
-import { WorkerResolver } from "./WorkerResolver";
 import { TaskStatus } from "./types";
+import { AbstractWorkerResolver } from "./AbstractWorkerResolver";
 import type { AbstractWorker } from "./AbstractWorker";
 import type { AbstractThread } from "./AbstractThread";
 
@@ -53,8 +53,8 @@ export abstract class AbstractTask<
     return this.resolvers.promise.finally(OFF);
   }
 
-  public reject(error: string) {
-    this.resolvers.reject(WorkerResolver.from(this.ID).error(error));
+  public reject<E = unknown>(error: E) {
+    this.resolvers.reject(AbstractWorkerResolver.error(this.ID, error).error);
   }
 
   protected abstract deriveResult(message: IncomingMessage): Result;
@@ -109,9 +109,21 @@ export abstract class AbstractTask<
     >,
   ) {
     return (error: Error | ErrorEvent) => {
-      this.status = TaskStatus.FAILED;
-      thread.isDead = true;
-      this.resolvers.reject(error);
+      this.onThrownError(error, thread);
     };
+  }
+
+  protected onThrownError(
+    error: Error | ErrorEvent,
+    _thread: AbstractThread<
+      Args,
+      Result,
+      WorkerType,
+      IncomingMessage,
+      typeof this
+    >,
+  ) {
+    this.status = TaskStatus.FAILED;
+    this.reject(error);
   }
 }

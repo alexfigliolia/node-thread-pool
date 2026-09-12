@@ -1,6 +1,7 @@
-import type { IWorkerResult, WorkerArgs } from "../shared";
+import type { WorkerArgs } from "../shared";
 import { AbstractThreadPoolWorker } from "../shared";
 
+import { WorkerResolver } from "./WorkerResolver";
 import type { WebWorkerEvent } from "./types";
 
 /**
@@ -16,7 +17,8 @@ export class ThreadPoolWorker<
 > extends AbstractThreadPoolWorker<
   WorkerArgs<Args>,
   WebWorkerEvent<Args>,
-  Result
+  Result,
+  WorkerResolver<Result>
 > {
   protected override listenToPort(
     callback: (event: WebWorkerEvent<Args>) => void,
@@ -32,7 +34,7 @@ export class ThreadPoolWorker<
     return args.data;
   }
 
-  protected override respond(result: IWorkerResult<Result, unknown>) {
-    self.postMessage(result);
+  protected override createResolver(ID: string) {
+    return new WorkerResolver<Result>(ID);
   }
 }

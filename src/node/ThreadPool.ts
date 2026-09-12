@@ -1,4 +1,4 @@
-import type { Worker } from "node:worker_threads";
+import type { Worker, WorkerOptions } from "node:worker_threads";
 
 import type { IWorkerResult } from "../shared";
 import { AbstractThreadPool } from "../shared";
@@ -22,6 +22,7 @@ export class ThreadPool<
 > extends AbstractThreadPool<
   Args,
   Result,
+  WorkerOptions,
   Worker,
   IWorkerResult<Result, unknown>,
   Task<Args, Result>,

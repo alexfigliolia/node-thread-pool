@@ -35,6 +35,7 @@ export abstract class AbstractThread<
       AbstractThread.Defaults.taskTimeoutThreshold;
     this.configuration = config as Required<IThread>;
     this.Worker = this.spawnWorker();
+    this.deferShutDown();
   }
 
   /**
@@ -55,19 +56,19 @@ export abstract class AbstractThread<
       await this.waitOnMaxConcurrency();
     }
     const task = this.createTask(args, timeoutThreshold);
-    const work = task.run(this);
-    this.pendingTasks.set(task.ID, task);
-    return work.finally(() => {
+    const work = task.run(this).finally(() => {
       this.pendingTasks.delete(task.ID);
       if (this.pendingTasks.size === 0) {
-        this.deferKill();
+        this.deferShutDown();
         this.flushIdleCallbacks();
       }
     });
+    this.pendingTasks.set(task.ID, task);
+    return work;
   }
 
   /**
-   * Kill
+   * Shut Down
    *
    * Forces the thread to shut down without waiting on pending tasks.
    * Consider this your utility to perform hard aborts to recover
@@ -76,7 +77,7 @@ export abstract class AbstractThread<
    * A `Thread` instance can be brought back to life simply by enqueuing
    * another task
    */
-  public kill() {
+  public shutDown() {
     if (this.killPromise) {
       return this.killPromise;
     }
@@ -94,23 +95,23 @@ export abstract class AbstractThread<
   }
 
   /**
-   * Kill Background
+   * Shut Down Background
    *
    * Shuts down your thread once it reaches idle.
    *
    * A `Thread` instance can be brought back to life simply by enqueuing
    * another task
    */
-  public killBackground() {
+  public shutDownBackground() {
     if (this.isIdle) {
       if (this.killPromise) {
         return this.killPromise;
       }
-      return this.kill();
+      return this.shutDown();
     }
     if (!this.idleKillListener) {
       const { resolve, promise } = Promise.withResolvers<void>();
-      this.idleKillListener = promise.then(() => this.kill());
+      this.idleKillListener = promise.then(() => this.shutDown());
       this.idleCallbacks.push(resolve);
     }
     return this.idleKillListener;
@@ -161,10 +162,13 @@ export abstract class AbstractThread<
     >
   ): Task;
 
-  private deferKill() {
+  private deferShutDown() {
+    if (!isFinite(this.configuration.threadIdleTimeout)) {
+      return;
+    }
     this.clearIdleTimer();
     this.timer = setTimeout(() => {
-      void this.kill();
+      void this.shutDown();
     }, this.configuration.threadIdleTimeout);
   }
 
