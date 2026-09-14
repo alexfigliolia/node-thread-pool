@@ -3,13 +3,13 @@
   "version": "2.0.0",
   "description": "A type-safe work stealing thread pool for the web and node.js",
   "keywords": [
-    "node.js",
-    "thread pool",
-    "workers",
-    "web workers",
-    "multi-threading",
     "concurrency",
-    "parallelism"
+    "multi-threading",
+    "node.js",
+    "parallelism",
+    "thread pool",
+    "web workers",
+    "workers"
   ],
   "homepage": "https://github.com/alexfigliolia/thread-pool#readme",
   "license": "MIT",
@@ -44,10 +44,8 @@
     "lint": "oxlint --type-aware --report-unused-disable-directives --fix && oxfmt",
     "test": "vitest"
   },
-  "dependencies": {
-    "@figliolia/event-emitter": "^2.0.0"
-  },
   "devDependencies": {
+    "@figliolia/event-emitter": "^2.0.0",
     "@types/node": "^22.20.2",
     "@vitest/browser-playwright": "^5.0.0",
     "@vitest/coverage-v8": "^5.0.0",

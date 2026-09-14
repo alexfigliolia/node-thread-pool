@@ -1,22 +1,18 @@
 import type {
-  IWorkerResolvedError,
-  IWorkerResolvedResult,
-  IWorkerResult,
-  WorkerArgs,
+  TaskArgs,
+  WorkerResponse,
+  WorkerTaskError,
+  WorkerTaskResponse,
 } from "../shared";
 
-export type WebWorkerEvent<T extends Record<string, any>> = MessageEvent<
-  WorkerArgs<T>
+export type WebWorkerEvent<Args> = MessageEvent<TaskArgs<Args>>;
+
+export type WebWorkerResponse<Result> = MessageEvent<
+  WorkerResponse<Result, unknown>
 >;
 
-export type WebWorkerResult<Result> = WebWorkerEvent<
-  IWorkerResult<Result, unknown>
+export type WebWorkerTaskResponse<Result> = MessageEvent<
+  WorkerTaskResponse<Result>
 >;
 
-export type WebWorkerResolvedResult<Result> = WebWorkerEvent<
-  IWorkerResolvedResult<Result>
->;
-
-export type WebWorkerResolvedError<Error> = WebWorkerEvent<
-  IWorkerResolvedError<Error>
->;
+export type WebWorkerError<Error> = MessageEvent<WorkerTaskError<Error>>;

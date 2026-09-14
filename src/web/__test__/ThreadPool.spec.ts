@@ -54,7 +54,7 @@ describe("Thread Pool", async () => {
     Pool => {
       it("Threads are resilient to crashes", async () => {
         await expect(Pool.enqueueTask({})).rejects.toThrow(
-          expect.any(ErrorEvent),
+          new Error("Something went wrong"),
         );
         expect(await Pool.enqueueTask({})).toEqual("hello");
         expect(Pool.isIdle).toEqual(true);

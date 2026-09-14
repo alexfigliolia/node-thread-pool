@@ -1,4 +1,4 @@
-import type { IWorkerResult } from "../shared";
+import type { WorkerResponse } from "../shared";
 import { AbstractWorkerResolver } from "../shared";
 
 /**
@@ -11,8 +11,8 @@ export class WorkerResolver<
   Result,
   Error = unknown,
 > extends AbstractWorkerResolver<Result, WindowPostMessageOptions, Error> {
-  protected respond(
-    result: IWorkerResult<Result, Error>,
+  protected override respond(
+    result: WorkerResponse<Result, Error>,
     options?: WindowPostMessageOptions,
   ) {
     self.postMessage(result, options);

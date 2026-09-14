@@ -1,6 +1,5 @@
-import { AutoIncrementingID } from "@figliolia/event-emitter";
-
-import { TaskStatus } from "./types";
+import type { ITask, TaskArgs, WorkerTaskResponse } from "./types";
+import { TaskStatus, TaskType } from "./types";
 import { AbstractWorkerResolver } from "./AbstractWorkerResolver";
 import type { AbstractWorker } from "./AbstractWorker";
 import type { AbstractThread } from "./AbstractThread";
@@ -12,21 +11,16 @@ import type { AbstractThread } from "./AbstractThread";
  * you can await the result of it's operation or query its status
  */
 export abstract class AbstractTask<
-  Args extends Record<string, any>,
+  Args,
   Result,
-  WorkerType extends AbstractWorker<any>,
+  OptionsOrTransferables,
+  WorkerType extends AbstractWorker<Args, OptionsOrTransferables, any>,
   IncomingMessage extends Record<string, any>,
 > {
-  public readonly ID: string;
   public status = TaskStatus.PENDING;
-  private static readonly IDs = new AutoIncrementingID();
   public readonly resolvers: PromiseWithResolvers<Result>;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  constructor(
-    public readonly args: Args,
-    public readonly timeoutThreshold?: number,
-  ) {
-    this.ID = AbstractTask.IDs.get();
+  constructor(public readonly options: ITask<Args>) {
     this.resolvers = Promise.withResolvers();
   }
 
@@ -34,96 +28,60 @@ export abstract class AbstractTask<
     thread: AbstractThread<
       Args,
       Result,
+      OptionsOrTransferables,
       WorkerType,
       IncomingMessage,
       typeof this
     >,
+    options?: OptionsOrTransferables,
   ) {
-    const workerArgs = this.toWorkerArgs(this.args);
-    const subscriber = thread.internallySubscribe(
-      this.onMessage,
-      this.onError(thread),
-    );
-    const OFF = () => {
-      this.killTimer();
-      subscriber();
-    };
+    const { ID, args } = this.options;
+    const workerArgs = this.toWorkerArgs(args);
+    const subscriber = thread.subscribeToTask(ID, this.onMessage);
     this.configureTimeout();
-    thread.internallyPostMessage(workerArgs);
-    return this.resolvers.promise.finally(OFF);
+    thread.Worker.postMessage(workerArgs, options);
+    return this.resolvers.promise.finally(() => {
+      subscriber();
+      this.shutDownTimer();
+    });
   }
 
   public reject<E = unknown>(error: E) {
-    this.resolvers.reject(AbstractWorkerResolver.error(this.ID, error).error);
+    this.resolvers.reject(
+      AbstractWorkerResolver.error(this.options.ID, error).error,
+    );
   }
 
-  protected abstract deriveResult(message: IncomingMessage): Result;
-
-  protected abstract deriveError(message: IncomingMessage): unknown;
-
-  protected abstract isError(message: IncomingMessage): boolean;
-
-  protected abstract matchTask(message: IncomingMessage): boolean;
-
   private configureTimeout() {
+    const { taskTimeoutThreshold } = this.options;
     if (
-      typeof this.timeoutThreshold === "number" &&
-      isFinite(this.timeoutThreshold)
+      typeof taskTimeoutThreshold === "number" &&
+      isFinite(taskTimeoutThreshold)
     ) {
       this.timer = setTimeout(() => {
         this.reject("Task timed out");
-      }, this.timeoutThreshold);
+      }, taskTimeoutThreshold);
     }
   }
 
-  private killTimer() {
+  private shutDownTimer() {
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
     }
   }
 
-  private toWorkerArgs<T extends Record<string, any>>(args: T) {
-    return { ...args, __WORKER_POOL_ID__: this.ID };
+  private toWorkerArgs<T>(args: T): TaskArgs<T> {
+    return { args, ID: this.options.ID, type: TaskType.TASK };
   }
 
-  private readonly onMessage = (data: IncomingMessage) => {
-    if (this.matchTask(data)) {
-      if (this.isError(data)) {
-        this.status = TaskStatus.FAILED;
-        this.resolvers.reject(this.deriveError(data));
-      } else {
-        this.status = TaskStatus.SUCCEEDED;
-        this.resolvers.resolve(this.deriveResult(data));
-      }
+  private readonly onMessage = (message: WorkerTaskResponse<Result>) => {
+    if ("error" in message) {
+      this.status = TaskStatus.FAILED;
+      this.resolvers.reject(message.error);
+    } else {
+      this.status = TaskStatus.SUCCEEDED;
+      this.resolvers.resolve(message.result);
     }
   };
-
-  private onError(
-    thread: AbstractThread<
-      Args,
-      Result,
-      WorkerType,
-      IncomingMessage,
-      typeof this
-    >,
-  ) {
-    return (error: Error | ErrorEvent) => {
-      this.onThrownError(error, thread);
-    };
-  }
-
-  protected onThrownError(
-    error: Error | ErrorEvent,
-    _thread: AbstractThread<
-      Args,
-      Result,
-      WorkerType,
-      IncomingMessage,
-      typeof this
-    >,
-  ) {
-    this.status = TaskStatus.FAILED;
-    this.reject(error);
-  }
 }

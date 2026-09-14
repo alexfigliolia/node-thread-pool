@@ -1,4 +1,4 @@
-import type { WorkerArgs } from "./types";
+import { TaskType, type WorkerResponse, type WorkerTaskError } from "./types";
 
 /**
  * Worker Resolver
@@ -11,7 +11,7 @@ export abstract class AbstractWorkerResolver<
   OptionsOrTransferrables,
   Error = unknown,
 > {
-  constructor(public readonly __WORKER_POOL_ID__: string) {}
+  constructor(public readonly ID: string) {}
 
   /**
    * Resolve
@@ -23,7 +23,11 @@ export abstract class AbstractWorkerResolver<
     options?: OptionsOrTransferrables,
   ) => {
     return this.respond(
-      { __WORKER_POOL_ID__: this.__WORKER_POOL_ID__, result },
+      {
+        ID: this.ID,
+        result,
+        type: TaskType.TASK,
+      },
       options,
     );
   };
@@ -37,26 +41,15 @@ export abstract class AbstractWorkerResolver<
     error: Error,
     options?: OptionsOrTransferrables,
   ) => {
-    return this.respond(
-      AbstractWorkerResolver.error(this.__WORKER_POOL_ID__, error),
-      options,
-    );
+    return this.respond(AbstractWorkerResolver.error(this.ID, error), options);
   };
 
-  public static error<E = unknown>(ID: string, error: E) {
-    return { __WORKER_POOL_ID__: ID, error };
+  public static error<E = unknown>(ID: string, error: E): WorkerTaskError<E> {
+    return { ID: ID, error, type: TaskType.TASK };
   }
 
   protected abstract respond(
-    result: IWorkerResult<Result, Error>,
+    result: WorkerResponse<Result, Error>,
     options?: OptionsOrTransferrables,
   ): void;
 }
-
-export type IWorkerResolvedResult<T> = WorkerArgs<{ result: T }>;
-
-export type IWorkerResolvedError<E> = WorkerArgs<{ error: E }>;
-
-export type IWorkerResult<T, E> =
-  | IWorkerResolvedResult<T>
-  | IWorkerResolvedError<E>;
