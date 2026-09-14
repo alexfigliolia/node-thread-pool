@@ -1,7 +1,7 @@
 import { SharedDefaults } from "../shared";
 
 class WebDefaults extends SharedDefaults {
-  public override readonly totalThreads = Math.trunc(
+  public override readonly maximumThreadCount = Math.trunc(
     navigator.hardwareConcurrency * 0.5,
   );
 }

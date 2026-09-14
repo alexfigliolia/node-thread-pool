@@ -3,7 +3,7 @@ import { availableParallelism } from "node:os";
 import { SharedDefaults } from "../shared";
 
 class NodeDefaults extends SharedDefaults {
-  public override readonly totalThreads = Math.trunc(
+  public override readonly maximumThreadCount = Math.trunc(
     availableParallelism() * 0.5,
   );
 }

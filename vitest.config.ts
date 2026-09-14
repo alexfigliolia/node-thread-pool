@@ -11,7 +11,6 @@ export default defineConfig({
           name: { label: "Web", color: "blue" },
           browser: {
             enabled: true,
-            name: "chromium",
             headless: true,
             provider: playwright(),
             instances: [{ browser: "chromium" }],

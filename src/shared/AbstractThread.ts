@@ -1,10 +1,12 @@
 import { AutoIncrementingID, EventEmitter } from "@figliolia/event-emitter";
 
-import type { WorkerResponse, WorkerTaskResponse } from "./types";
+import type { WorkerResponse } from "./types";
 import { TaskType, type EventStream, type IThread } from "./types";
 import { Defaults } from "./Defaults";
+import { BackgroundTask } from "./BackgroundTask";
 import type { AbstractWorker } from "./AbstractWorker";
 import type { AbstractTask } from "./AbstractTask";
+import type { AbstractPing } from "./AbstractPing";
 
 /**
  * Thread
@@ -18,24 +20,19 @@ export abstract class AbstractThread<
   OptionsOrTransferables,
   WorkerType extends AbstractWorker<Args, OptionsOrTransferables, any>,
   IncomingMessage extends Record<string, any>,
-  Task extends AbstractTask<
-    Args,
-    Result,
-    OptionsOrTransferables,
-    WorkerType,
-    IncomingMessage
-  >,
+  Task extends AbstractTask<Args, Result>,
+  Ping extends AbstractPing,
 > {
   public isDead = false;
-  public Worker: WorkerType;
+  protected Worker: WorkerType;
   protected killPromise?: Promise<void>;
   private idleKillListener?: Promise<void>;
   public static readonly Defaults = Defaults;
-  public readonly configuration: Required<IThread>;
-  private readonly idleCallbacks: (() => void)[] = [];
-  private readonly pendingTasks = new Map<string, Task>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  public readonly options: Required<IThread>;
   private readonly IDs = new AutoIncrementingID();
+  private readonly shutDownSchedule: BackgroundTask;
+  private readonly idleCallbacks: (() => void)[] = [];
+  private readonly pendingTasks = new Map<string, Task | Ping>();
   protected readonly Emitter = new EventEmitter<EventStream<Result>>();
   constructor(
     config: IThread,
@@ -45,9 +42,15 @@ export abstract class AbstractThread<
     config.threadIdleTimeout ??= AbstractThread.Defaults.threadIdleTimeout;
     config.taskTimeoutThreshold ??=
       AbstractThread.Defaults.taskTimeoutThreshold;
-    this.configuration = config as Required<IThread>;
+    this.options = config as Required<IThread>;
     this.Worker = this.spawnWorker();
-    this.deferShutDown();
+    this.shutDownSchedule = new BackgroundTask(
+      this.options.threadIdleTimeout,
+      () => {
+        void this.shutDown();
+      },
+    );
+    this.shutDownSchedule.start();
   }
 
   /**
@@ -59,28 +62,38 @@ export abstract class AbstractThread<
   public async enqueueTask(
     args: Args,
     options?: OptionsOrTransferables,
-    taskTimeoutThreshold = this.configuration.taskTimeoutThreshold,
+    taskTimeoutThreshold = this.options.taskTimeoutThreshold,
   ) {
-    if (this.isDead) {
-      this.respawn();
-    }
-    this.clearIdleTimer();
-    if (this.totalOutstandingTasks >= this.configuration.maxConcurrency) {
-      await this.waitOnMaxConcurrency();
-    }
-    const ID = this.IDs.get();
-    const task = this.createTask({
-      ID,
-      args,
-      taskTimeoutThreshold,
+    const task = await this.spawn(ID =>
+      this.createTask({
+        ID,
+        args,
+        taskTimeoutThreshold,
+      }),
+    );
+    const subscriber = this.subscribeToTask(task);
+    this.Worker.postMessage(task.taskArgs(), options);
+    return task.run().finally(() => {
+      this.onComplete(task, subscriber);
     });
-    this.pendingTasks.set(ID, task);
-    return task.run(this, options).finally(() => {
-      this.pendingTasks.delete(ID);
-      if (this.pendingTasks.size === 0) {
-        this.deferShutDown();
-        this.flushIdleCallbacks();
-      }
+  }
+
+  /**
+   * Ping
+   *
+   * Measures latency between the main thread and the current worker thread
+   */
+  public async ping(taskTimeoutThreshold = this.options.taskTimeoutThreshold) {
+    const ping = await this.spawn(ID =>
+      this.createPing({
+        ID,
+        taskTimeoutThreshold,
+      }),
+    );
+    const subscriber = this.subscribeToPing(ping);
+    this.Worker.postMessage(ping.taskArgs());
+    return ping.run().finally(() => {
+      this.onComplete(ping, subscriber);
     });
   }
 
@@ -110,10 +123,10 @@ export abstract class AbstractThread<
    * another task
    */
   public shutDownBackground() {
+    if (this.killPromise) {
+      return this.killPromise;
+    }
     if (this.isIdle) {
-      if (this.killPromise) {
-        return this.killPromise;
-      }
       return this.shutDown();
     }
     if (!this.idleKillListener) {
@@ -152,20 +165,6 @@ export abstract class AbstractThread<
     return this.pendingTasks;
   }
 
-  public subscribeToTask(
-    ID: string,
-    callback: (response: WorkerTaskResponse<Result, unknown>) => void,
-  ) {
-    const subscriber = this.Emitter.on(ID, result => {
-      if (result.type === TaskType.TASK) {
-        callback(result);
-      }
-    });
-    return () => {
-      this.Emitter.off(ID, subscriber);
-    };
-  }
-
   protected abstract terminateWorker(): Promise<void>;
 
   protected abstract spawnWorker(): WorkerType;
@@ -175,33 +174,12 @@ export abstract class AbstractThread<
   ): WorkerResponse<Result>;
 
   protected abstract createTask(
-    ...args: ConstructorParameters<
-      typeof AbstractTask<
-        Args,
-        Result,
-        OptionsOrTransferables,
-        WorkerType,
-        IncomingMessage
-      >
-    >
+    ...args: ConstructorParameters<typeof AbstractTask<Args, Result>>
   ): Task;
 
-  private deferShutDown() {
-    if (!isFinite(this.configuration.threadIdleTimeout)) {
-      return;
-    }
-    this.clearIdleTimer();
-    this.timer = setTimeout(() => {
-      void this.shutDown();
-    }, this.configuration.threadIdleTimeout);
-  }
-
-  private clearIdleTimer() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-  }
+  protected abstract createPing(
+    ...args: ConstructorParameters<typeof AbstractPing>
+  ): Ping;
 
   private flushIdleCallbacks() {
     while (this.idleCallbacks.length) {
@@ -211,7 +189,7 @@ export abstract class AbstractThread<
 
   private async waitOnMaxConcurrency() {
     while (true) {
-      if (this.totalOutstandingTasks > this.configuration.maxConcurrency) {
+      if (this.totalOutstandingTasks > this.options.maxConcurrency) {
         break;
       }
       await Promise.race(
@@ -232,12 +210,12 @@ export abstract class AbstractThread<
     this.Worker = this.spawnWorker();
   }
 
-  protected runForcedShutDownProtocol(runOnDestroy = true) {
-    this.clearIdleTimer();
+  protected runForcedShutDownProtocol(runDestroy = true) {
+    this.shutDownSchedule.stop();
     this.isDead = true;
     this.killPromise = this.terminateWorker().then(() => {
-      if (runOnDestroy) {
-        this.configuration?.onDestroy?.();
+      if (runDestroy) {
+        this.options?.onDestroy?.();
       }
       for (const [_, task] of this.pendingTasks) {
         task.reject("Thread killed manually");
@@ -246,5 +224,57 @@ export abstract class AbstractThread<
       this.flushIdleCallbacks();
     });
     return this.killPromise;
+  }
+
+  private onStream(
+    ID: string,
+    callback: (response: WorkerResponse<Result, unknown>) => void,
+  ) {
+    const subscriber = this.Emitter.on(ID, callback);
+    return () => {
+      this.Emitter.off(ID, subscriber);
+    };
+  }
+
+  private subscribeToTask(task: Task) {
+    return this.onStream(task.options.ID, result => {
+      if (result.type === TaskType.TASK) {
+        return task.onResponse(result);
+      }
+      task.reject(new Error("Invalid Response", { cause: result }));
+    });
+  }
+
+  private subscribeToPing(ping: Ping) {
+    return this.onStream(ping.options.ID, result => {
+      if (result.type === TaskType.PING) {
+        return ping.onResponse(result);
+      }
+      ping.reject(new Error("Invalid Response", { cause: result }));
+    });
+  }
+
+  private async spawn<T extends Task | Ping>(creator: (ID: string) => T) {
+    if (this.isDead) {
+      this.respawn();
+    }
+    const ID = this.IDs.get();
+    const task = creator(ID);
+    if (this.totalOutstandingTasks >= this.options.maxConcurrency) {
+      this.shutDownSchedule.stop();
+      await this.waitOnMaxConcurrency();
+    }
+    this.pendingTasks.set(ID, task);
+    this.shutDownSchedule.start();
+    return task;
+  }
+
+  private onComplete(task: Task | Ping, subscriber: () => void) {
+    subscriber();
+    this.pendingTasks.delete(task.options.ID);
+    if (this.pendingTasks.size === 0) {
+      this.shutDownSchedule.start();
+      this.flushIdleCallbacks();
+    }
   }
 }
