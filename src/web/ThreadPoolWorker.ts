@@ -40,4 +40,8 @@ export class ThreadPoolWorker<Args, Result> extends AbstractThreadPoolWorker<
   protected override createResolver(ID: string) {
     return new WorkerResolver<Result>(ID);
   }
+
+  protected override getTime() {
+    return performance.now();
+  }
 }

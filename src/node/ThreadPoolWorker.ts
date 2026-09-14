@@ -1,4 +1,5 @@
 import { parentPort } from "node:worker_threads";
+import { performance } from "node:perf_hooks";
 
 import type { TaskArgs } from "../shared";
 import { AbstractThreadPoolWorker } from "../shared";
@@ -36,7 +37,11 @@ export class ThreadPoolWorker<Args, Result> extends AbstractThreadPoolWorker<
     return args;
   }
 
-  protected createResolver(ID: string) {
+  protected override createResolver(ID: string) {
     return new WorkerResolver<Result>(ID);
+  }
+
+  protected override getTime() {
+    return performance.now();
   }
 }

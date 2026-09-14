@@ -1,8 +1,9 @@
-import type { IThreadPool } from "./types";
+import type { IThreadPool, ThreadLatency } from "./types";
 import { Defaults } from "./Defaults";
 import type { AbstractWorker } from "./AbstractWorker";
 import type { AbstractThread } from "./AbstractThread";
 import type { AbstractTask } from "./AbstractTask";
+import type { AbstractPing } from "./AbstractPing";
 
 /**
  * Thread Pool
@@ -24,41 +25,37 @@ export abstract class AbstractThreadPool<
     WorkerOptions
   >,
   IncomingMessage extends Record<string, any>,
-  Task extends AbstractTask<
-    Args,
-    Result,
-    OptionsOrTransferables,
-    WorkerType,
-    IncomingMessage
-  >,
+  Task extends AbstractTask<Args, Result>,
+  Ping extends AbstractPing,
   Thread extends AbstractThread<
     Args,
     Result,
     OptionsOrTransferables,
     WorkerType,
     IncomingMessage,
-    Task
+    Task,
+    Ping
   >,
 > {
   public static readonly Defaults = Defaults;
   private readonly POOL: (Thread | null)[];
   public readonly taskTimeoutThreshold?: number;
-  public readonly configuration: Required<IThreadPool>;
+  public readonly options: Required<IThreadPool>;
   constructor(
-    config: IThreadPool,
+    options: IThreadPool,
     public readonly workerOptions?: WorkerOptions,
   ) {
     const defaults = (this.constructor as typeof AbstractThreadPool).Defaults;
-    config.totalThreads ??= defaults.totalThreads;
-    config.maxConcurrency ??= defaults.maxConcurrency;
-    config.lazySpawnThreads ??= defaults.lazySpawnThreads;
-    config.threadIdleTimeout ??= defaults.threadIdleTimeout;
-    config.taskTimeoutThreshold ??= defaults.taskTimeoutThreshold;
-    this.configuration = config as Required<IThreadPool>;
+    options.maximumThreadCount ??= defaults.maximumThreadCount;
+    options.maxConcurrency ??= defaults.maxConcurrency;
+    options.lazySpawnThreads ??= defaults.lazySpawnThreads;
+    options.threadIdleTimeout ??= defaults.threadIdleTimeout;
+    options.taskTimeoutThreshold ??= defaults.taskTimeoutThreshold;
+    this.options = options as Required<IThreadPool>;
     this.POOL = Array.from(
-      { length: this.configuration.totalThreads },
+      { length: this.options.maximumThreadCount },
       (_, i) => {
-        if (this.configuration.lazySpawnThreads) {
+        if (this.options.lazySpawnThreads) {
           return null;
         }
         return this.createThread(i);
@@ -76,9 +73,14 @@ export abstract class AbstractThreadPool<
   public async enqueueTask(
     args: Args,
     options?: OptionsOrTransferables,
-    taskTimeoutThreshold = this.configuration.taskTimeoutThreshold,
+    taskTimeoutThreshold = this.options.taskTimeoutThreshold,
   ) {
-    const index = this.getIdleThreadIndex();
+    const index =
+      this.getIdleThreadIndex() ??
+      (await this.getThreadWithLowestLatency(
+        taskTimeoutThreshold,
+        result => result.index,
+      ));
     this.POOL[index] ??= this.createThread(index);
     const result = this.POOL[index].enqueueTask(
       args,
@@ -86,6 +88,18 @@ export abstract class AbstractThreadPool<
       taskTimeoutThreshold,
     );
     return result;
+  }
+  /**
+   * Ping
+   *
+   * Pings each thread in the thread pool returning the lowest latency
+   * out of each thread. Returns the thread instance, index, and latency measure
+   */
+  public ping(taskTimeoutThreshold = this.options.taskTimeoutThreshold) {
+    return this.getThreadWithLowestLatency(taskTimeoutThreshold, result => ({
+      ...result,
+      thread: this.POOL[result.index]!,
+    }));
   }
 
   /**
@@ -120,7 +134,7 @@ export abstract class AbstractThreadPool<
    */
   public async shutDownBackground() {
     await Promise.all(
-      this.POOL.map(thread => Promise.resolve(thread?.shutDown?.())),
+      this.POOL.map(thread => Promise.resolve(thread?.shutDownBackground?.())),
     );
     this.releaseThreads();
   }
@@ -131,7 +145,7 @@ export abstract class AbstractThreadPool<
    * Returns a list of all currently running tasks in the pool
    */
   public get pendingTasks() {
-    const tasks: Task[] = [];
+    const tasks: (Task | Ping)[] = [];
     for (const thread of this.POOL) {
       tasks.push(...Array.from(thread?.outstandingTasks?.values?.() ?? []));
     }
@@ -192,21 +206,36 @@ export abstract class AbstractThreadPool<
   }
 
   private getIdleThreadIndex() {
-    let minIndex = this.configuration.totalThreads - 1;
-    let minLoad = Infinity;
-    let pointer = -1;
+    let minIndex = 0;
     for (const thread of this.POOL) {
-      ++pointer;
-      const threadLoad = thread?.outstandingTasks?.size ?? 0;
+      const threadLoad = thread?.totalOutstandingTasks ?? 0;
       if (threadLoad === 0) {
-        return pointer;
+        return minIndex;
       }
-      if (threadLoad < minLoad) {
-        minLoad = threadLoad;
-        minIndex = pointer;
-      }
+      minIndex++;
     }
-    return minIndex;
+    return undefined;
+  }
+
+  private async getThreadWithLowestLatency<T>(
+    taskTimeoutThreshold = this.options.taskTimeoutThreshold,
+    select: (result: ThreadLatency) => T,
+  ) {
+    const promises: Promise<ThreadLatency>[] = [];
+    let index = -1;
+    for (const thread of this.POOL) {
+      ++index;
+      if (!thread) {
+        return select({ index, latency: 0 });
+      }
+      let current = index;
+      promises.push(
+        thread
+          .ping(taskTimeoutThreshold)
+          .then(latency => ({ latency, index: current })),
+      );
+    }
+    return select(await this.race(...promises));
   }
 
   private createThread(position: number) {
@@ -215,7 +244,7 @@ export abstract class AbstractThreadPool<
       maxConcurrency,
       threadIdleTimeout,
       taskTimeoutThreshold,
-    } = this.configuration;
+    } = this.options;
     return this.spawn(
       {
         workerScript,
@@ -231,7 +260,7 @@ export abstract class AbstractThreadPool<
   }
 
   private releaseThreads() {
-    for (let i = 0; i < this.configuration.totalThreads; i++) {
+    for (let i = 0; i < this.POOL.length; i++) {
       this.POOL[i] = null;
     }
   }
@@ -244,8 +273,30 @@ export abstract class AbstractThreadPool<
         OptionsOrTransferables,
         WorkerType,
         IncomingMessage,
-        Task
+        Task,
+        Ping
       >
     >
   ): Thread;
+
+  private race<T>(...promises: Promise<T>[]) {
+    const { resolve, reject, promise } = Promise.withResolvers<T>();
+    let resolved = false;
+    let rejections: any[] = [];
+    for (const promise of promises) {
+      void promise
+        .then(result => {
+          if (!resolved) {
+            resolve(result);
+          }
+        })
+        .catch(error => {
+          rejections.push(error);
+          if (rejections.length === promises.length) {
+            reject(rejections);
+          }
+        });
+    }
+    return promise;
+  }
 }

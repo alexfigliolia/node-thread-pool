@@ -1,10 +1,11 @@
 import type { Transferable } from "node:worker_threads";
 import { Worker } from "node:worker_threads";
 
-import type { AbstractTask, WorkerResponse } from "../shared";
+import type { WorkerResponse } from "../shared";
 import { AbstractThread, AbstractWorkerResolver } from "../shared";
 
 import { Task } from "./Task";
+import { Ping } from "./Ping";
 
 /**
  * Thread
@@ -18,17 +19,15 @@ export class Thread<Args, Result> extends AbstractThread<
   readonly Transferable[],
   Worker,
   WorkerResponse<Result>,
-  Task<Args, Result>
+  Task<Args, Result>,
+  Ping
 > {
   protected override terminateWorker() {
     return this.Worker.terminate().then(() => {});
   }
 
   protected override spawnWorker() {
-    const worker = new Worker(
-      this.configuration.workerScript,
-      this.workerOptions,
-    );
+    const worker = new Worker(this.options.workerScript, this.workerOptions);
     worker.on("message", message => {
       const response = this.deriveResponse(message);
       this.Emitter.emit(response.ID, response);
@@ -46,17 +45,13 @@ export class Thread<Args, Result> extends AbstractThread<
   }
 
   protected override createTask(
-    ...args: ConstructorParameters<
-      typeof AbstractTask<
-        Args,
-        Result,
-        readonly Transferable[],
-        Worker,
-        WorkerResponse<Result>
-      >
-    >
+    ...args: ConstructorParameters<typeof Task<Args, Result>>
   ) {
     return new Task<Args, Result>(...args);
+  }
+
+  protected override createPing(...args: ConstructorParameters<typeof Ping>) {
+    return new Ping(...args);
   }
 
   protected override deriveResponse(message: WorkerResponse<Result>) {

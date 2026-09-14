@@ -8,3 +8,4 @@ export * from "./AbstractThreadPoolWorker";
 export * from "./AbstractWorker";
 export * from "./AbstractWorkerResolver";
 export * from "./AbstractThreadPool";
+export * from "./AbstractPing";

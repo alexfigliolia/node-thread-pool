@@ -32,7 +32,6 @@ import { ThreadPoolWorker } from "@figliolia/thread-pool/web";
 
 new ThreadPoolWorker((args: YourTaskArgs) => {
   // your multi-threaded work
-
   // return or throw the value you'd like to pass back
   // to the main thread
 });
@@ -71,7 +70,7 @@ new ThreadPoolWorker((event: { filePath: string; search: string }) => {
       results.push(entry.parentPath);
     }
   }
-  // resolve with all matching file paths
+  // return all matching file paths
   return results;
 });
 ```
@@ -105,6 +104,9 @@ const myThread = new Thread<ArgsType, ResultType>(
 // Run a task on your thread
 const result = await myThread.enqueueTask(args);
 // args will be posted to your worker script
+
+// Get the current measure of thread latency
+const latency = await myThread.ping();
 
 // whether the thread has no pending tasks running
 myThread.isIdle;
@@ -145,12 +147,15 @@ const myPool = new ThreadPool({
   // (optional) whether to spawn threads based on necessity or to pre-allocate them
   lazySpawnThreads: true,
   // (optional) the maximum number of threads allow the pool allocate
-  totalThreads: os.cpus().length / 2,
+  maximumThreadCount: os.cpus().length / 2,
 });
 
 // to run a task in your thread pool
 const result = await myPool.enqueueTask(args);
 // args will be posted to your worker script
+
+// Returns the lowest latency thread between all threads in the pool
+const latency = await myPool.ping();
 
 // A list of tasks currently running in the pool
 myPool.pendingTasks;

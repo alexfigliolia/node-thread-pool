@@ -1,4 +1,9 @@
-import type { TaskArgs, ThreadPoolWorkerOperation } from "./types";
+import type { WorkerRequest } from "./types";
+import {
+  TaskType,
+  type TaskArgs,
+  type ThreadPoolWorkerOperation,
+} from "./types";
 import type { AbstractWorkerResolver } from "./AbstractWorkerResolver";
 
 /**
@@ -17,21 +22,31 @@ export abstract class AbstractThreadPoolWorker<
   constructor(operation: ThreadPoolWorkerOperation<Args, Result>) {
     this.listenToPort((data: Event) => {
       const args = this.deriveArgs(data);
-      this.unwrapAndCatch(operation, args);
+      const resolver = this.createResolver(args.ID);
+      switch (args.type) {
+        case TaskType.TASK:
+          this.unwrapAndCatch(operation, resolver, args);
+          break;
+        case TaskType.PING:
+          resolver.ping(this.getTime() - args.time);
+          break;
+      }
     });
   }
 
   protected abstract listenToPort(callback: (event: Event) => void): void;
 
-  protected abstract deriveArgs(args: Event): TaskArgs<Args>;
+  protected abstract deriveArgs(args: Event): WorkerRequest<Args>;
 
   protected abstract createResolver(ID: string): Resolver;
 
+  protected abstract getTime(): number;
+
   private unwrapAndCatch(
     operation: ThreadPoolWorkerOperation<Args, Result>,
+    resolver: Resolver,
     args: TaskArgs<Args>,
   ) {
-    const resolver = this.createResolver(args.ID);
     try {
       const result = operation(args.args);
       if (result instanceof Promise) {

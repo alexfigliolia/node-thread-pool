@@ -1,6 +1,6 @@
 {
   "name": "@figliolia/thread-pool",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "A type-safe work stealing thread pool for the web and node.js",
   "keywords": [
     "concurrency",

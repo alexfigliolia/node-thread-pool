@@ -44,6 +44,19 @@ export abstract class AbstractWorkerResolver<
     return this.respond(AbstractWorkerResolver.error(this.ID, error), options);
   };
 
+  /**
+   * Ping
+   *
+   * Responds to the main thread's ping with a latency measure
+   */
+  public ping(latency: number) {
+    return this.respond({
+      ID: this.ID,
+      time: latency,
+      type: TaskType.PING,
+    });
+  }
+
   public static error<E = unknown>(ID: string, error: E): WorkerTaskError<E> {
     return { ID: ID, error, type: TaskType.TASK };
   }

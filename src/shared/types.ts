@@ -1,4 +1,16 @@
-export interface IThreadOptions {
+export interface IThreadTimeoutThreshold {
+  /**
+   * taskTimeoutThreshold
+   *
+   * A timeout for tasks spawned on a thread. Using this threshold, an enqueued task's promise will reject if not complete
+   * within the duration of the threshold
+   *
+   * Defaults to `Infinity`
+   */
+  taskTimeoutThreshold?: number;
+}
+
+export interface IThreadOptions extends IThreadTimeoutThreshold {
   /**
    * maxConcurrency
    *
@@ -21,15 +33,6 @@ export interface IThreadOptions {
    * Defaults to `2000`
    */
   threadIdleTimeout?: number;
-  /**
-   * taskTimeoutThreshold
-   *
-   * A timeout for tasks spawned on a thread. Using this threshold, an enqueued task's promise will reject if not complete
-   * within the duration of the threshold
-   *
-   * Defaults to `Infinity`
-   */
-  taskTimeoutThreshold?: number;
 }
 
 export interface IThreadPool extends IThreadOptions {
@@ -38,21 +41,21 @@ export interface IThreadPool extends IThreadOptions {
    *
    * Whether threads in the pool should spawn as needed based on the pool's task throughput.
    *
-   * When false, a thread for each of the number of `totalThreads` will be pre-allocated
+   * When false, a thread for each of the number of `maximumThreadCount` will be pre-allocated
    *
    * Defaults to `true`
    */
   lazySpawnThreads?: boolean;
   /**
-   * totalThreads
+   * maximumThreadCount
    *
    * Whether threads in the pool should spawn as needed based on the pool's task throughput.
    *
-   * When false, a thread for each of the number of `totalThreads` will be pre-allocated
+   * When false, a thread for each of the number of `maximumThreadCount` will be pre-allocated
    *
    * Defaults to the half the number of CPU cores
    */
-  totalThreads?: number;
+  maximumThreadCount?: number;
 }
 
 export interface IThread extends IThreadOptions {
@@ -64,15 +67,19 @@ export interface IThread extends IThreadOptions {
   onDestroy?: () => void;
 }
 
-export interface ITask<Args> {
+export interface IThreadTask extends IThreadTimeoutThreshold {
   ID: string;
+}
+
+export interface ITask<Args> extends IThreadTask {
   args: Args;
-  taskTimeoutThreshold?: number;
 }
 
 export type WithTaskID<T extends Record<string, any>> = T & {
   ID: string;
 };
+
+export type ThreadTask = WithTaskID<{ type: TaskType }>;
 
 export type WithTask<T extends Record<string, any>> = WithTaskID<T> & {
   type: TaskType.TASK;
@@ -123,3 +130,8 @@ export type EventStream<Result, Error = unknown> = Record<
 export type ThreadPoolWorkerOperation<Args, Result> = (
   args: Args,
 ) => Result | Promise<Result>;
+
+export interface ThreadLatency {
+  latency: number;
+  index: number;
+}

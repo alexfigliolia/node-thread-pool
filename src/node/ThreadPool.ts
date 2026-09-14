@@ -4,6 +4,7 @@ import { AbstractThreadPool, type WorkerResponse } from "../shared";
 
 import { Thread } from "./Thread";
 import type { Task } from "./Task";
+import type { Ping } from "./Ping";
 import { Defaults } from "./Defaults";
 
 /**
@@ -23,6 +24,7 @@ export class ThreadPool<Args, Result> extends AbstractThreadPool<
   Worker,
   WorkerResponse<Result>,
   Task<Args, Result>,
+  Ping,
   Thread<Args, Result>
 > {
   public static override readonly Defaults = Defaults;

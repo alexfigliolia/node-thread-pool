@@ -1,8 +1,8 @@
-import type { AbstractTask } from "../shared";
 import { AbstractThread } from "../shared";
 
 import type { WebWorkerResponse } from "./types";
 import { Task } from "./Task";
+import { Ping } from "./Ping";
 
 /**
  * Thread
@@ -16,17 +16,15 @@ export class Thread<Args, Result> extends AbstractThread<
   StructuredSerializeOptions,
   Worker,
   WebWorkerResponse<Result>,
-  Task<Args, Result>
+  Task<Args, Result>,
+  Ping
 > {
   protected override terminateWorker() {
     return Promise.resolve(this.Worker.terminate());
   }
 
   protected override spawnWorker() {
-    const worker = new Worker(
-      this.configuration.workerScript,
-      this.workerOptions,
-    );
+    const worker = new Worker(this.options.workerScript, this.workerOptions);
     worker.addEventListener("message", message => {
       const response = this.deriveResponse(message);
       this.Emitter.emit(response.ID, response);
@@ -39,16 +37,12 @@ export class Thread<Args, Result> extends AbstractThread<
   }
 
   protected override createTask(
-    ...args: ConstructorParameters<
-      typeof AbstractTask<
-        Args,
-        Result,
-        StructuredSerializeOptions,
-        Worker,
-        WebWorkerResponse<Result>
-      >
-    >
+    ...args: ConstructorParameters<typeof Task<Args, Result>>
   ) {
     return new Task<Args, Result>(...args);
+  }
+
+  protected override createPing(...args: ConstructorParameters<typeof Ping>) {
+    return new Ping(...args);
   }
 }
