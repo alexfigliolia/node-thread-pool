@@ -1,6 +1,6 @@
 import { parentPort } from "node:worker_threads";
 
-import type { WorkerArgs } from "../shared";
+import type { TaskArgs } from "../shared";
 import { AbstractThreadPoolWorker } from "../shared";
 
 import { WorkerResolver } from "./WorkerResolver";
@@ -11,25 +11,28 @@ import { WorkerResolver } from "./WorkerResolver";
  * A wrapper around worker-thread message transport. Pass
  * your multi-threaded logic as a callback to the constructor
  * and it'll take care of the rest.
+ * ```typescript
+ * import { ThreadPoolWorker } from "@figliolia/thread-pool/web";
+ *
+ * new ThreadPoolWorker((args: YourTaskArgs) => {
+ *   // your multi-threaded work
+ *
+ *   // return or throw the value you'd like to pass back
+ *   // to the main thread
+ * });
+ * ```
  */
-export class ThreadPoolWorker<
-  Args extends Record<string, any>,
-  Result,
-> extends AbstractThreadPoolWorker<
-  WorkerArgs<Args>,
-  WorkerArgs<Args>,
+export class ThreadPoolWorker<Args, Result> extends AbstractThreadPoolWorker<
+  Args,
+  TaskArgs<Args>,
   Result,
   WorkerResolver<Result>
 > {
-  protected override listenToPort(callback: (event: WorkerArgs<Args>) => void) {
+  protected override listenToPort(callback: (event: TaskArgs<Args>) => void) {
     return parentPort?.on("message", callback);
   }
 
-  protected override getTaskID(args: WorkerArgs<Args>) {
-    return args.__WORKER_POOL_ID__;
-  }
-
-  protected override deriveArgs(args: WorkerArgs<Args>) {
+  protected override deriveArgs(args: TaskArgs<Args>): TaskArgs<Args> {
     return args;
   }
 

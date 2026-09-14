@@ -1,7 +1,6 @@
 import { parentPort, type Transferable } from "node:worker_threads";
 
-import type { IWorkerResult } from "../shared";
-import { AbstractWorkerResolver } from "../shared";
+import { AbstractWorkerResolver, type WorkerResponse } from "../shared";
 
 /**
  * Worker Resolver
@@ -14,7 +13,7 @@ export class WorkerResolver<
   Error = unknown,
 > extends AbstractWorkerResolver<Result, readonly Transferable[], Error> {
   protected respond(
-    result: IWorkerResult<Result, Error>,
+    result: WorkerResponse<Result, Error>,
     transferables?: readonly Transferable[],
   ) {
     parentPort?.postMessage(result, transferables);

@@ -21,7 +21,7 @@ npm i -D @figliolia/thread-pool
 
 The Worker's script is typically what trips up new-comers to JavaScript's multi-threading model. With this in mind, we designed an interface to simplify worker creation.
 
-Simply create your worker's file and wrap your desired logic in
+Start by creating your worker file and wrapping your desired logic in
 a `ThreadPoolWorker` instance;
 
 ```typescript
@@ -30,10 +30,10 @@ import { ThreadPoolWorker } from "@figliolia/thread-pool/node";
 // or
 import { ThreadPoolWorker } from "@figliolia/thread-pool/web";
 
-new ThreadPoolWorker((args: YourTaskArgs, resolve, reject) => {
+new ThreadPoolWorker((args: YourTaskArgs) => {
   // your multi-threaded work
 
-  // resolve or reject with whatever value you'd liek to pass back
+  // return or throw the value you'd like to pass back
   // to the main thread
 });
 
@@ -58,10 +58,7 @@ A working example of a `ThreadPoolWorker` script might look like the following:
 import { readdir } from "node:fs/promises";
 import { ThreadPoolWorker } from "@figliolia/thread-pool/node";
 
-new ThreadPoolWorker((
-  event: { filePath: string; search: string },
-  resolve,
-) => {
+new ThreadPoolWorker((event: { filePath: string; search: string }) => {
   // scan the file system recursively
   const list = readdir(event.filePath, {
     recursive: true,
@@ -75,7 +72,7 @@ new ThreadPoolWorker((
     }
   }
   // resolve with all matching file paths
-  return resolve(results);
+  return results;
 });
 ```
 
@@ -85,7 +82,7 @@ To spawn a thread for more predictable `off-the-main-thread` work, use the `Thre
 
 ```typescript
 import { Thread } from "@figliolia/thread-pool/node";
-// or 
+// or
 import { Thread } from "@figliolia/thread-pool/web";
 
 const myThread = new Thread<ArgsType, ResultType>(

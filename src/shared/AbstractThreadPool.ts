@@ -8,21 +8,33 @@ import type { AbstractTask } from "./AbstractTask";
  * Thread Pool
  *
  * A pool of (lazily or pre)-allocated threads from which to load
- * balance any number of multithreaded operations. The pool
- * automatically loadbalances tasks, greedily shuts down threads,
- * supports max-concurrency per thread, and allows for type-safe
+ * balance any number of multithreaded operations. The pool will
+ * automatically loadbalance tasks, greedily shut down threads,
+ * support max-concurrency per thread, and allow for type-safe
  * multi-threaded operations.
  */
 export abstract class AbstractThreadPool<
-  Args extends Record<string, any>,
+  Args,
   Result,
+  OptionsOrTransferables,
   WorkerOptions extends Record<string, any>,
-  WorkerType extends AbstractWorker<WorkerOptions>,
+  WorkerType extends AbstractWorker<
+    Args,
+    OptionsOrTransferables,
+    WorkerOptions
+  >,
   IncomingMessage extends Record<string, any>,
-  Task extends AbstractTask<Args, Result, WorkerType, IncomingMessage>,
+  Task extends AbstractTask<
+    Args,
+    Result,
+    OptionsOrTransferables,
+    WorkerType,
+    IncomingMessage
+  >,
   Thread extends AbstractThread<
     Args,
     Result,
+    OptionsOrTransferables,
     WorkerType,
     IncomingMessage,
     Task
@@ -61,10 +73,18 @@ export abstract class AbstractThreadPool<
    * Returns a promise containing the data from your worker's
    * corresponding postMessage() call
    */
-  public async enqueueTask(args: Args) {
-    const index = this.getidleThreadIndex();
+  public async enqueueTask(
+    args: Args,
+    options?: OptionsOrTransferables,
+    taskTimeoutThreshold = this.configuration.taskTimeoutThreshold,
+  ) {
+    const index = this.getIdleThreadIndex();
     this.POOL[index] ??= this.createThread(index);
-    const result = this.POOL[index].enqueueTask(args);
+    const result = this.POOL[index].enqueueTask(
+      args,
+      options,
+      taskTimeoutThreshold,
+    );
     return result;
   }
 
@@ -171,7 +191,7 @@ export abstract class AbstractThreadPool<
     return this.POOL;
   }
 
-  private getidleThreadIndex() {
+  private getIdleThreadIndex() {
     let minIndex = this.configuration.totalThreads - 1;
     let minLoad = Infinity;
     let pointer = -1;
@@ -218,7 +238,14 @@ export abstract class AbstractThreadPool<
 
   protected abstract spawn(
     ...args: ConstructorParameters<
-      typeof AbstractThread<Args, Result, WorkerType, IncomingMessage, Task>
+      typeof AbstractThread<
+        Args,
+        Result,
+        OptionsOrTransferables,
+        WorkerType,
+        IncomingMessage,
+        Task
+      >
     >
   ): Thread;
 }

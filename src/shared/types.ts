@@ -64,12 +64,62 @@ export interface IThread extends IThreadOptions {
   onDestroy?: () => void;
 }
 
-export type WorkerArgs<T extends Record<string, any>> = T & {
-  __WORKER_POOL_ID__: string;
+export interface ITask<Args> {
+  ID: string;
+  args: Args;
+  taskTimeoutThreshold?: number;
+}
+
+export type WithTaskID<T extends Record<string, any>> = T & {
+  ID: string;
 };
+
+export type WithTask<T extends Record<string, any>> = WithTaskID<T> & {
+  type: TaskType.TASK;
+};
+
+export type WithPing<T extends Record<string, any>> = WithTaskID<T> & {
+  type: TaskType.PING;
+};
+
+export type TaskArgs<Args> = WithTask<{ args: Args }>;
+
+export type PingArgs = WithPing<{ time: number }>;
 
 export enum TaskStatus {
   FAILED = "failed",
   PENDING = "pending",
   SUCCEEDED = "succeeded",
 }
+
+export enum TaskType {
+  TASK = "task",
+  PING = "ping",
+}
+
+export type WorkerTaskResult<Result> = WithTask<{ result: Result }>;
+
+export type WorkerTaskError<Error = unknown> = WithTask<{ error: Error }>;
+
+export type WorkerTaskResponse<Result, Error = unknown> =
+  | WorkerTaskResult<Result>
+  | WorkerTaskError<Error>;
+
+export type WorkerPingResponse = WithPing<{
+  time: number;
+}>;
+
+export type WorkerResponse<Result, Error = unknown> =
+  | WorkerTaskResponse<Result, Error>
+  | WorkerPingResponse;
+
+export type WorkerRequest<Args> = PingArgs | TaskArgs<Args>;
+
+export type EventStream<Result, Error = unknown> = Record<
+  string,
+  [WorkerResponse<Result, Error>]
+>;
+
+export type ThreadPoolWorkerOperation<Args, Result> = (
+  args: Args,
+) => Result | Promise<Result>;

@@ -1,4 +1,7 @@
-import type { IThread, WorkerArgs } from "./types";
+import { AutoIncrementingID, EventEmitter } from "@figliolia/event-emitter";
+
+import type { WorkerResponse, WorkerTaskResponse } from "./types";
+import { TaskType, type EventStream, type IThread } from "./types";
 import { Defaults } from "./Defaults";
 import type { AbstractWorker } from "./AbstractWorker";
 import type { AbstractTask } from "./AbstractTask";
@@ -10,21 +13,30 @@ import type { AbstractTask } from "./AbstractTask";
  * operations, concurrency limits, and automatic shut down
  */
 export abstract class AbstractThread<
-  Args extends Record<string, any>,
+  Args,
   Result,
-  WorkerType extends AbstractWorker<any>,
+  OptionsOrTransferables,
+  WorkerType extends AbstractWorker<Args, OptionsOrTransferables, any>,
   IncomingMessage extends Record<string, any>,
-  Task extends AbstractTask<Args, Result, WorkerType, IncomingMessage>,
+  Task extends AbstractTask<
+    Args,
+    Result,
+    OptionsOrTransferables,
+    WorkerType,
+    IncomingMessage
+  >,
 > {
   public isDead = false;
   public Worker: WorkerType;
-  private killPromise?: Promise<void>;
+  protected killPromise?: Promise<void>;
   private idleKillListener?: Promise<void>;
   public static readonly Defaults = Defaults;
   public readonly configuration: Required<IThread>;
   private readonly idleCallbacks: (() => void)[] = [];
   private readonly pendingTasks = new Map<string, Task>();
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private readonly IDs = new AutoIncrementingID();
+  protected readonly Emitter = new EventEmitter<EventStream<Result>>();
   constructor(
     config: IThread,
     public readonly workerOptions?: WorkerOptions,
@@ -46,7 +58,8 @@ export abstract class AbstractThread<
    */
   public async enqueueTask(
     args: Args,
-    timeoutThreshold = this.configuration.taskTimeoutThreshold,
+    options?: OptionsOrTransferables,
+    taskTimeoutThreshold = this.configuration.taskTimeoutThreshold,
   ) {
     if (this.isDead) {
       this.respawn();
@@ -55,16 +68,20 @@ export abstract class AbstractThread<
     if (this.totalOutstandingTasks >= this.configuration.maxConcurrency) {
       await this.waitOnMaxConcurrency();
     }
-    const task = this.createTask(args, timeoutThreshold);
-    const work = task.run(this).finally(() => {
-      this.pendingTasks.delete(task.ID);
+    const ID = this.IDs.get();
+    const task = this.createTask({
+      ID,
+      args,
+      taskTimeoutThreshold,
+    });
+    this.pendingTasks.set(ID, task);
+    return task.run(this, options).finally(() => {
+      this.pendingTasks.delete(ID);
       if (this.pendingTasks.size === 0) {
         this.deferShutDown();
         this.flushIdleCallbacks();
       }
     });
-    this.pendingTasks.set(task.ID, task);
-    return work;
   }
 
   /**
@@ -81,17 +98,7 @@ export abstract class AbstractThread<
     if (this.killPromise) {
       return this.killPromise;
     }
-    this.clearIdleTimer();
-    this.killPromise = this.terminateWorker().then(() => {
-      this.configuration?.onDestroy?.();
-      for (const [_, task] of this.pendingTasks) {
-        task.reject("Thread killed manually");
-      }
-      this.pendingTasks.clear();
-      this.flushIdleCallbacks();
-      this.isDead = true;
-    });
-    return this.killPromise;
+    return this.runForcedShutDownProtocol();
   }
 
   /**
@@ -145,20 +152,37 @@ export abstract class AbstractThread<
     return this.pendingTasks;
   }
 
-  public abstract internallyPostMessage(args: WorkerArgs<Args>): void;
-
-  public abstract internallySubscribe(
-    onMessage: (message: IncomingMessage) => void,
-    onError: (error: Error | ErrorEvent) => void,
-  ): () => void;
+  public subscribeToTask(
+    ID: string,
+    callback: (response: WorkerTaskResponse<Result, unknown>) => void,
+  ) {
+    const subscriber = this.Emitter.on(ID, result => {
+      if (result.type === TaskType.TASK) {
+        callback(result);
+      }
+    });
+    return () => {
+      this.Emitter.off(ID, subscriber);
+    };
+  }
 
   protected abstract terminateWorker(): Promise<void>;
 
   protected abstract spawnWorker(): WorkerType;
 
+  protected abstract deriveResponse(
+    message: IncomingMessage,
+  ): WorkerResponse<Result>;
+
   protected abstract createTask(
     ...args: ConstructorParameters<
-      typeof AbstractTask<Args, Result, WorkerType, IncomingMessage>
+      typeof AbstractTask<
+        Args,
+        Result,
+        OptionsOrTransferables,
+        WorkerType,
+        IncomingMessage
+      >
     >
   ): Task;
 
@@ -198,7 +222,7 @@ export abstract class AbstractThread<
     }
   }
 
-  private respawn() {
+  protected respawn() {
     if (!this.isDead) {
       return;
     }
@@ -206,5 +230,21 @@ export abstract class AbstractThread<
     this.killPromise = undefined;
     this.idleKillListener = undefined;
     this.Worker = this.spawnWorker();
+  }
+
+  protected runForcedShutDownProtocol(runOnDestroy = true) {
+    this.clearIdleTimer();
+    this.isDead = true;
+    this.killPromise = this.terminateWorker().then(() => {
+      if (runOnDestroy) {
+        this.configuration?.onDestroy?.();
+      }
+      for (const [_, task] of this.pendingTasks) {
+        task.reject("Thread killed manually");
+      }
+      this.pendingTasks.clear();
+      this.flushIdleCallbacks();
+    });
+    return this.killPromise;
   }
 }

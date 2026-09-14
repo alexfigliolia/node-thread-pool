@@ -1,7 +1,6 @@
-import type { Worker, WorkerOptions } from "node:worker_threads";
+import type { Transferable, Worker, WorkerOptions } from "node:worker_threads";
 
-import type { IWorkerResult } from "../shared";
-import { AbstractThreadPool } from "../shared";
+import { AbstractThreadPool, type WorkerResponse } from "../shared";
 
 import { Thread } from "./Thread";
 import type { Task } from "./Task";
@@ -11,20 +10,18 @@ import { Defaults } from "./Defaults";
  * Thread Pool
  *
  * A pool of (lazily or pre)-allocated threads from which to load
- * balance any number of multithreaded operations. The pool
- * automatically loadbalances tasks, greedily shuts down threads,
- * supports max-concurrency per thread, and allows for type-safe
+ * balance any number of multithreaded operations. The pool will
+ * automatically loadbalance tasks, greedily shut down threads,
+ * support max-concurrency per thread, and allow for type-safe
  * multi-threaded operations.
  */
-export class ThreadPool<
-  Args extends Record<string, any>,
-  Result,
-> extends AbstractThreadPool<
+export class ThreadPool<Args, Result> extends AbstractThreadPool<
   Args,
   Result,
+  readonly Transferable[],
   WorkerOptions,
   Worker,
-  IWorkerResult<Result, unknown>,
+  WorkerResponse<Result>,
   Task<Args, Result>,
   Thread<Args, Result>
 > {
